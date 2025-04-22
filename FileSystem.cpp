@@ -88,19 +88,55 @@ bool FileSystem::Create(const std::string &filename, size_t sizeInBytes) {
 
 
 bool FileSystem::Write(const std::string &filename, size_t offset, const std::string &data) {
-    return false;
+    //determine the bloc that we are writing to
+    size_t blocNumber = offset / device.diskBlockSize();
+    //determine the offset within the block
+    size_t blocOffset = offset % device.diskBlockSize();
+    //get the block that we will be writing to
+    Inode inode = root[filename];
+    size_t block = inode.blockList[blocNumber];
+    //get the content before the offset, anything after the offset will be re written
+    char* buffer = new char[device.diskBlockSize()];
+    device.ReadBlock(blocNumber, buffer); // entire bloc inserted into buffer
+    std::string str(buffer);
+    delete[] buffer;
+    std::string newContent = str.substr(0, blocOffset) + data; //keep only the content before the offset
+    //write the new content in the block 
+    const char* dataToWrite = newContent.c_str();
+    device.WriteBlock(blocNumber, dataToWrite);
+    return true;
 }
 
 bool FileSystem::Read(const std::string &filename, size_t offset, size_t length, std::string &outData) {
-    return false;
+    //determine the bloc that we are reading
+    size_t blocNumber = offset / device.diskBlockSize();
+    //determine the offset within the block
+    size_t blocOffset = offset % device.diskBlockSize();
+    //get the block 
+    Inode inode = root[filename];
+    size_t block = inode.blockList[blocNumber];
+    //get the content before the offset, anything after the offset will be re written
+    char* buffer = new char[device.diskBlockSize()];
+    device.ReadBlock(blocNumber, buffer); // entire bloc inserted into buffer
+    std::string str(buffer);
+    delete[] buffer;
+    outData = str.substr(blocOffset, blocOffset + length); //keep only the content after the offset and before the length 
+    return true;
 }
 
 bool FileSystem::Delete(const std::string &filename) {
-    return false;
+    Inode inode = root[filename];
+    for (size_t i : inode.blockList){ //free all the bits used
+        freeBitmap[i] = true;
+    }
+    root.erase(filename) ;//erase the file from root
+    return true;
 }
 
 void FileSystem::List() {
-
+    for (const auto& pair : root){
+        std::cout << pair.first << std::endl;
+    }
 }
 
 void FileSystem::freeAllBlocks() {

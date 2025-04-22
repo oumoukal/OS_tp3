@@ -3,6 +3,7 @@
 //
 
 #include "BlockDevice.h"
+#include <cstring>
 
 BlockDevice::BlockDevice() : disk(BLOCK_SIZE * NUM_BLOCKS, 0) {} ;
 
@@ -16,7 +17,7 @@ bool BlockDevice::ReadBlock(size_t blockIndex, char* buffer) {
 
 bool BlockDevice::WriteBlock(size_t blockIndex, const char* data) {
     if (blockIndex >= NUM_BLOCKS || data == nullptr) return false;
-    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+    for (size_t i = 0; i < strlen(data); ++i) {
         disk[blockIndex * BLOCK_SIZE + i] = data[i];
     }
     return true;
