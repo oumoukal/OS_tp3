@@ -88,54 +88,102 @@ bool FileSystem::Create(const std::string &filename, size_t sizeInBytes) {
 
 
 bool FileSystem::Write(const std::string &filename, size_t offset, const std::string &data) {
+    std::cout << "Write dans " << filename << " ("<< data.size() <<" octets)"<<std::endl;
     //determine the bloc that we are writing to
     size_t blocNumber = offset / device.diskBlockSize();
     //determine the offset within the block
     size_t blocOffset = offset % device.diskBlockSize();
-    //get the block that we will be writing to
+    //get the inode of the file we will be writing to
     Inode inode = root[filename];
+    //get the content before the offset, anything after the offset will be rewritten
     size_t block = inode.blockList[blocNumber];
-    //get the content before the offset, anything after the offset will be re written
     char* buffer = new char[device.diskBlockSize()];
-    device.ReadBlock(blocNumber, buffer); // entire bloc inserted into buffer
+    device.ReadBlock(block, buffer); // entire bloc inserted into buffer
     std::string str(buffer);
     delete[] buffer;
-    std::string newContent = str.substr(0, blocOffset) + data; //keep only the content before the offset
-    //write the new content in the block 
-    const char* dataToWrite = newContent.c_str();
-    device.WriteBlock(blocNumber, dataToWrite);
-    return true;
+    std::string newContent = str.substr(0, blocOffset) + data; //keep only the content before the offset append new data to the end
+    //verify that we have enough space allocated to write our blocks if not returns false code be changed to write until full
+    if(inode.blockList.size() < blocNumber + newContent.size() / device.diskBlockSize() + 1) return false;
+    //write the new content in the block if it can fit in only one  
+    if (newContent.size() <= device.diskBlockSize()){
+        size_t block = inode.blockList[blocNumber];
+        const char* dataToWrite = newContent.c_str();
+        device.WriteBlock(block, dataToWrite);
+        return true;
+    }
+    //if we cant fit in 1 bloc we will need to write to multiple blocs
+    else{
+        int numberOfBlocks = newContent.size() / device.diskBlockSize() + 1;
+        int startPosition = 0;
+        for (int i = 0; i< numberOfBlocks; i++ ){
+            size_t block = inode.blockList[blocNumber];
+            const char* dataToWrite = newContent.substr(startPosition, device.diskBlockSize()).c_str();
+            device.WriteBlock(block, dataToWrite);
+            startPosition += device.diskBlockSize();
+            blocNumber++;
+        }
+    }
+    return false;
+    
 }
 
 bool FileSystem::Read(const std::string &filename, size_t offset, size_t length, std::string &outData) {
+    std::cout << "Read dans " << filename << " ("<< length <<" octets)"<<std::endl;
     //determine the bloc that we are reading
     size_t blocNumber = offset / device.diskBlockSize();
     //determine the offset within the block
     size_t blocOffset = offset % device.diskBlockSize();
     //get the block 
     Inode inode = root[filename];
-    size_t block = inode.blockList[blocNumber];
-    //get the content before the offset, anything after the offset will be re written
-    char* buffer = new char[device.diskBlockSize()];
-    device.ReadBlock(blocNumber, buffer); // entire bloc inserted into buffer
-    std::string str(buffer);
-    delete[] buffer;
-    outData = str.substr(blocOffset, blocOffset + length); //keep only the content after the offset and before the length 
-    return true;
+    //we need to verify we are not reading data which is not contanied in our file
+    if (inode.blockList.size() < blocNumber + (length + offset) / device.diskBlockSize() + 1) return false;
+    //write the new content in the block if it can fit in only one  
+    if (length + offset <= device.diskBlockSize()){
+        size_t block = inode.blockList[blocNumber];
+        //get the block, anything after the offset will be returned
+        char* buffer = new char[device.diskBlockSize()];
+        device.ReadBlock(block, buffer); // entire bloc inserted into buffer
+        std::string str(buffer);
+        delete[] buffer;
+        outData = str.substr(blocOffset, blocOffset + length); //keep only the content after the offset and before the length 
+        return true;
+    }
+    else{
+        int numberOfBlocks = (length + offset) / device.diskBlockSize() + 1;
+        for (int i = 0; i< numberOfBlocks; i++ ){
+            size_t block = inode.blockList[blocNumber];
+            char* buffer = new char[device.diskBlockSize()];
+            device.ReadBlock(block, buffer); 
+            blocNumber++;
+            std::string str(buffer);
+            delete[] buffer;
+            outData += str;
+        }
+        outData = outData.substr(blocOffset, blocOffset + length); //keep only the content after the offset and before the length 
+    }
+    return false;
+
 }
 
 bool FileSystem::Delete(const std::string &filename) {
-    Inode inode = root[filename];
-    for (size_t i : inode.blockList){ //free all the bits used
-        freeBitmap[i] = true;
+    if(root.find(filename) != root.end()){
+        Inode inode = root[filename];
+        for (size_t i : inode.blockList){ //free all the bits used
+            freeBitmap[i] = true;
+        }
+        root.erase(filename) ;//erase the file from root
+        std::cout << "Fichier " << filename << " supprime"<<std::endl;
+        return true;
     }
-    root.erase(filename) ;//erase the file from root
-    return true;
+    else{
+        return false;
+    }
 }
 
 void FileSystem::List() {
+    std::cout << "Liste des fichiers:"<<std::endl;
     for (const auto& pair : root){
-        std::cout << pair.first << std::endl;
+        std::cout <<"-"<< pair.first << ": size " <<pair.second.fileSize<< " octets, nombre de blocs ="<<pair.second.blockList.size() <<std::endl;
     }
 }
 
